@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   Clock3,
+  FileText,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
@@ -208,9 +209,14 @@ export default function Home() {
               <p className="text-xs text-[#668078]">Care, right on time</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-medium text-[#42665b] shadow-sm">
-            <span className="h-2 w-2 rounded-full bg-[#27a47d] shadow-[0_0_0_4px_rgba(39,164,125,.12)]" />
-            Booking service online
+          <div className="flex items-center gap-2">
+            <a href="/docs" className="inline-flex items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-semibold text-[#33695a] shadow-sm transition hover:border-[#a9c8bb] hover:bg-[#edf6f1]">
+              <FileText size={14} /> API docs
+            </a>
+            <div className="hidden items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-medium text-[#42665b] shadow-sm sm:flex">
+              <span className="h-2 w-2 rounded-full bg-[#27a47d] shadow-[0_0_0_4px_rgba(39,164,125,.12)]" />
+              Booking service online
+            </div>
           </div>
         </div>
       </header>

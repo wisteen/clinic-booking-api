@@ -2,6 +2,12 @@
 
 A persistent appointment-booking API and responsive patient web page built for the [Koya Clinic Booking API assessment](https://koyaacademy.com/assessment-api). The application is a standard Next.js deployment for Vercel backed by Neon Postgres.
 
+## Live deployment
+
+- Patient booking page and API base: [clinic-booking-api-ten.vercel.app](https://clinic-booking-api-ten.vercel.app)
+- ReDoc API reference: [clinic-booking-api-ten.vercel.app/docs](https://clinic-booking-api-ten.vercel.app/docs)
+- OpenAPI description: [clinic-booking-api-ten.vercel.app/openapi.json](https://clinic-booking-api-ten.vercel.app/openapi.json)
+
 ## What is implemented
 
 - **Level 1:** reset/list slots, create bookings, and look up a booking.
