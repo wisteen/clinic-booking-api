@@ -1,6 +1,6 @@
 # Haven Clinic Booking API
 
-A durable appointment-booking API and responsive patient web page built against the [Koya Clinic Booking API assessment](https://koyaacademy.com/assessment-api).
+A persistent appointment-booking API and responsive patient web page built for the [Koya Clinic Booking API assessment](https://koyaacademy.com/assessment-api). The application is a standard Next.js deployment for Vercel backed by Neon Postgres.
 
 ## What is implemented
 
@@ -33,39 +33,53 @@ Every error has the shape `{ "error": "message" }`.
 
 ## Why concurrent bookings are safe
 
-`bookings.active_slot_id` has a unique database index. A confirmed booking stores its slot ID there; cancellation sets it to `NULL`. If simultaneous requests target one slot, D1 can commit only one insert and the other requests become `409` responses. Successful booking and idempotency records are committed in the same atomic D1 batch.
+`bookings.active_slot_id` has a unique Postgres constraint. A confirmed booking stores its slot ID there; cancellation sets it to `NULL`. If simultaneous requests target one slot, Postgres commits only one insert and the other requests become `409` responses. A successful booking and its idempotency record are committed in one serializable transaction.
 
 ## Local development
 
-Requirements: Node.js 22.13 or newer.
+Requirements: Node.js 22.13 or newer and a Postgres database.
 
 ```bash
 npm install
-npm run db:generate
-npm run build
-node --import ./scripts/sites-env.mjs ./node_modules/wrangler/bin/wrangler.js d1 execute DB --local --config dist/server/wrangler.json --persist-to .wrangler/state --file drizzle/0000_hesitant_excalibur.sql
-npm start
+cp .env.example .env.local
+npm run dev
 ```
 
-Copy `.env.example` to `.dev.vars` and set `API_KEY`. The included ignored local file uses `local-dev-key`.
+Set these values in `.env.local`:
 
-To run the contract test against the local server:
+```dotenv
+API_KEY=replace-with-a-long-random-key
+DATABASE_URL=postgresql://user:password@host/database?sslmode=require
+```
+
+The API creates its four tables on the first authenticated database request. The matching Drizzle migration is also committed in `drizzle/` for inspection or manual migration workflows.
+
+Run the contract suite against a local server:
 
 ```bash
 npm run test:api
 ```
 
-To test a deployment:
+Test a deployment:
 
 ```bash
-BASE_URL=https://example.com API_KEY=your-key npm run test:api
+BASE_URL=https://your-project.vercel.app API_KEY=your-key npm run test:api
 ```
+
+## Deploy to Vercel
+
+1. Import this GitHub repository into Vercel as a Next.js project.
+2. Add the Neon integration from the Vercel Marketplace and connect it to the project. Confirm it provides `DATABASE_URL`.
+3. Add `API_KEY` to the Production, Preview, and Development environments.
+4. Deploy. No custom build command or output directory is required.
+5. Call `POST /reset` once with future appointment slots, then run `npm run test:api` against the deployment.
 
 ## Architecture
 
-- Vinext/React page and Next-compatible route handlers
-- Cloudflare Worker runtime
-- Cloudflare D1 SQLite database with Drizzle-generated migrations
-- API key stored as a hosted secret, never bundled into the browser or committed
+- Next.js App Router page and route handlers
+- Vercel Functions for the API
+- Neon serverless Postgres for durable data
+- SQL unique constraints and serializable transactions for race safety
+- API key stored only in environment variables and entered by the patient at runtime
 
 See [docs/loom-outline.md](docs/loom-outline.md) for a concise recording plan.

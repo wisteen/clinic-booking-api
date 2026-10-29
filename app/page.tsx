@@ -105,11 +105,19 @@ export default function Home() {
 
   useEffect(() => {
     const saved = sessionStorage.getItem("clinic-api-key") ?? "";
-    if (saved) {
+    if (!saved) return;
+
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
       setApiKey(saved);
       setKeyDraft(saved);
       void loadSlots(saved);
-    }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [loadSlots]);
 
   const providers = useMemo(

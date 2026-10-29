@@ -1,13 +1,13 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { bigint, index, integer, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
-export const slots = sqliteTable("slots", {
+export const slots = pgTable("slots", {
   id: text("id").primaryKey(),
   provider: text("provider").notNull(),
-  start: text("start").notNull(),
-  end: text("end").notNull(),
+  start: timestamp("start", { withTimezone: true }).notNull(),
+  end: timestamp("end", { withTimezone: true }).notNull(),
 });
 
-export const bookings = sqliteTable(
+export const bookings = pgTable(
   "bookings",
   {
     id: text("id").primaryKey(),
@@ -16,7 +16,7 @@ export const bookings = sqliteTable(
     name: text("name").notNull(),
     email: text("email").notNull(),
     status: text("status", { enum: ["confirmed", "cancelled"] }).notNull(),
-    createdAt: text("created_at").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   },
   (table) => [
     uniqueIndex("bookings_active_slot_unique").on(table.activeSlotId),
@@ -24,16 +24,16 @@ export const bookings = sqliteTable(
   ],
 );
 
-export const idempotencyKeys = sqliteTable("idempotency_keys", {
+export const idempotencyKeys = pgTable("idempotency_keys", {
   key: text("key").primaryKey(),
   requestHash: text("request_hash").notNull(),
   responseStatus: integer("response_status").notNull(),
   responseBody: text("response_body").notNull(),
-  createdAt: text("created_at").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 });
 
-export const rateLimits = sqliteTable("rate_limits", {
+export const rateLimits = pgTable("rate_limits", {
   email: text("email").primaryKey(),
-  windowStart: integer("window_start").notNull(),
+  windowStart: bigint("window_start", { mode: "number" }).notNull(),
   attempts: integer("attempts").notNull(),
 });

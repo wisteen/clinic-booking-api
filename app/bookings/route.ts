@@ -1,10 +1,11 @@
+import { ensureSchema, getSql } from "../../db";
 import {
   type Booking,
+  type BookingRow,
   consumeRateLimit,
   decodeCursor,
   encodeCursor,
   errorResponse,
-  getDatabase,
   internalErrorResponse,
   isAuthorized,
   jsonResponse,
@@ -12,13 +13,14 @@ import {
   requestHash,
   respondAndRemember,
   toBooking,
+  toIsoDate,
   unauthorizedResponse,
 } from "../../lib/booking-api";
 
 export const dynamic = "force-dynamic";
 
 type NewBookingBody = { slot_id?: unknown; name?: unknown; email?: unknown };
-type SlotRow = { id: string; start: string };
+type SlotRow = { id: string; start: string | Date };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -54,17 +56,18 @@ export async function POST(request: Request) {
   }
 
   try {
-    const db = getDatabase();
+    await ensureSchema();
+    const sql = getSql();
     const hash = await requestHash(payload);
 
     if (idempotencyKey) {
-      const replay = await replayIdempotentResponse(db, idempotencyKey, hash);
+      const replay = await replayIdempotentResponse(sql, idempotencyKey, hash);
       if (replay) return replay;
     }
 
     const normalizedEmail = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
     if (normalizedEmail) {
-      const rateLimit = await consumeRateLimit(db, normalizedEmail);
+      const rateLimit = await consumeRateLimit(sql, normalizedEmail);
       if (!rateLimit.allowed) {
         return errorResponse("too many booking attempts", 429, {
           "Retry-After": String(rateLimit.retryAfter),
@@ -74,19 +77,20 @@ export async function POST(request: Request) {
 
     const invalid = validationError(payload);
     if (invalid) {
-      return respondAndRemember(db, idempotencyKey, hash, { error: invalid }, 400);
+      return respondAndRemember(sql, idempotencyKey, hash, { error: invalid }, 400);
     }
 
-    const slotId = payload.slot_id as string;
+    const slotId = (payload.slot_id as string).trim();
     const name = (payload.name as string).trim();
     const email = normalizedEmail;
-    const slot = await db.prepare("SELECT id, start FROM slots WHERE id = ?").bind(slotId).first<SlotRow>();
+    const slotRows = await sql`SELECT id, start FROM slots WHERE id = ${slotId}`;
+    const slot = (slotRows as unknown as SlotRow[])[0];
 
     if (!slot) {
-      return respondAndRemember(db, idempotencyKey, hash, { error: "slot not found" }, 404);
+      return respondAndRemember(sql, idempotencyKey, hash, { error: "slot not found" }, 404);
     }
-    if (Date.parse(slot.start) <= Date.now()) {
-      return respondAndRemember(db, idempotencyKey, hash, { error: "slot has already started" }, 400);
+    if (Date.parse(toIsoDate(slot.start)) <= Date.now()) {
+      return respondAndRemember(sql, idempotencyKey, hash, { error: "slot has already started" }, 400);
     }
 
     const booking: Booking = {
@@ -97,43 +101,38 @@ export async function POST(request: Request) {
       status: "confirmed",
       created_at: new Date().toISOString(),
     };
-    const responseBody = JSON.stringify(booking);
-    const statements = [
-      db
-        .prepare(
-          `INSERT INTO bookings (id, slot_id, active_slot_id, name, email, status, created_at)
-           VALUES (?, ?, ?, ?, ?, 'confirmed', ?)`,
-        )
-        .bind(booking.id, booking.slot_id, booking.slot_id, booking.name, booking.email, booking.created_at),
+    const queries = [
+      sql`
+        INSERT INTO bookings
+          (id, slot_id, active_slot_id, name, email, status, created_at)
+        VALUES
+          (${booking.id}, ${booking.slot_id}, ${booking.slot_id}, ${booking.name}, ${booking.email}, 'confirmed', ${booking.created_at})
+      `,
     ];
 
     if (idempotencyKey) {
-      statements.push(
-        db
-          .prepare(
-            `INSERT INTO idempotency_keys
-             (key, request_hash, response_status, response_body, created_at)
-             VALUES (?, ?, 201, ?, ?)`,
-          )
-          .bind(idempotencyKey, hash, responseBody, booking.created_at),
-      );
+      queries.push(sql`
+        INSERT INTO idempotency_keys
+          (key, request_hash, response_status, response_body, created_at)
+        VALUES
+          (${idempotencyKey}, ${hash}, 201, ${JSON.stringify(booking)}, ${booking.created_at})
+      `);
     }
 
     try {
-      await db.batch(statements);
+      await sql.transaction(queries, { isolationLevel: "Serializable" });
       return jsonResponse(booking, 201);
     } catch (error) {
       if (idempotencyKey) {
-        const replay = await replayIdempotentResponse(db, idempotencyKey, hash);
+        const replay = await replayIdempotentResponse(sql, idempotencyKey, hash);
         if (replay) return replay;
       }
 
-      const confirmed = await db
-        .prepare("SELECT id FROM bookings WHERE active_slot_id = ?")
-        .bind(slotId)
-        .first<{ id: string }>();
-      if (confirmed) {
-        return respondAndRemember(db, idempotencyKey, hash, { error: "slot already booked" }, 409);
+      const confirmedRows = await sql`
+        SELECT id FROM bookings WHERE active_slot_id = ${slotId}
+      `;
+      if ((confirmedRows as unknown as Array<{ id: string }>)[0]) {
+        return respondAndRemember(sql, idempotencyKey, hash, { error: "slot already booked" }, 409);
       }
       throw error;
     }
@@ -160,30 +159,28 @@ export async function GET(request: Request) {
     const cursor = cursorValue ? decodeCursor(cursorValue) : null;
     if (cursorValue && !cursor) return errorResponse("cursor is invalid", 400);
 
-    const db = getDatabase();
-    const statement = cursor
-      ? db
-          .prepare(
-            `SELECT id, slot_id, name, email, status, created_at
-             FROM bookings
-             WHERE email = ? AND (created_at > ? OR (created_at = ? AND id > ?))
-             ORDER BY created_at ASC, id ASC
-             LIMIT ?`,
-          )
-          .bind(email, cursor.created_at, cursor.created_at, cursor.id, limit + 1)
-      : db
-          .prepare(
-            `SELECT id, slot_id, name, email, status, created_at
-             FROM bookings
-             WHERE email = ?
-             ORDER BY created_at ASC, id ASC
-             LIMIT ?`,
-          )
-          .bind(email, limit + 1);
+    await ensureSchema();
+    const sql = getSql();
+    const rows = cursor
+      ? await sql`
+          SELECT id, slot_id, name, email, status, created_at
+          FROM bookings
+          WHERE email = ${email}
+            AND (created_at > ${cursor.created_at} OR (created_at = ${cursor.created_at} AND id > ${cursor.id}))
+          ORDER BY created_at ASC, id ASC
+          LIMIT ${limit + 1}
+        `
+      : await sql`
+          SELECT id, slot_id, name, email, status, created_at
+          FROM bookings
+          WHERE email = ${email}
+          ORDER BY created_at ASC, id ASC
+          LIMIT ${limit + 1}
+        `;
 
-    const result = await statement.all<Booking>();
-    const hasMore = result.results.length > limit;
-    const bookings = result.results.slice(0, limit).map(toBooking);
+    const bookingRows = rows as unknown as BookingRow[];
+    const hasMore = bookingRows.length > limit;
+    const bookings = bookingRows.slice(0, limit).map(toBooking);
     const nextCursor = hasMore ? encodeCursor(bookings[bookings.length - 1]) : null;
     return jsonResponse({ bookings, next_cursor: nextCursor });
   } catch (error) {

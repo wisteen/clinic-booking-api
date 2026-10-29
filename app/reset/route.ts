@@ -1,6 +1,6 @@
+import { ensureSchema, getSql } from "../../db";
 import {
   errorResponse,
-  getDatabase,
   internalErrorResponse,
   isAuthorized,
   jsonResponse,
@@ -41,20 +41,23 @@ export async function POST(request: Request) {
       return errorResponse("slot ids must be unique", 400);
     }
 
-    const db = getDatabase();
-    const statements = [
-      db.prepare("DELETE FROM idempotency_keys"),
-      db.prepare("DELETE FROM bookings"),
-      db.prepare("DELETE FROM slots"),
-      db.prepare("DELETE FROM rate_limits"),
-      ...payload.slots.map((slot) =>
-        db
-          .prepare("INSERT INTO slots (id, provider, start, end) VALUES (?, ?, ?, ?)")
-          .bind(slot.id, slot.provider, slot.start, slot.end),
-      ),
-    ];
-
-    await db.batch(statements);
+    await ensureSchema();
+    const sql = getSql();
+    await sql.transaction(
+      [
+        sql`DELETE FROM idempotency_keys`,
+        sql`DELETE FROM bookings`,
+        sql`DELETE FROM slots`,
+        sql`DELETE FROM rate_limits`,
+        ...payload.slots.map(
+          (slot) => sql`
+            INSERT INTO slots (id, provider, start, "end")
+            VALUES (${slot.id}, ${slot.provider}, ${slot.start}, ${slot.end})
+          `,
+        ),
+      ],
+      { isolationLevel: "Serializable" },
+    );
     return jsonResponse({ ok: true });
   } catch (error) {
     if (error instanceof SyntaxError) return errorResponse("invalid JSON body", 400);

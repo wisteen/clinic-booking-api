@@ -1,4 +1,4 @@
-import { env } from "cloudflare:workers";
+import { getSql } from "../db";
 
 export type BookingStatus = "confirmed" | "cancelled";
 
@@ -11,7 +11,10 @@ export type Booking = {
   created_at: string;
 };
 
-type BookingRow = Booking & { active_slot_id?: string | null };
+export type BookingRow = Omit<Booking, "created_at"> & {
+  created_at: string | Date;
+  active_slot_id?: string | null;
+};
 
 type StoredIdempotency = {
   request_hash: string;
@@ -19,15 +22,10 @@ type StoredIdempotency = {
   response_body: string;
 };
 
-export function getDatabase(): D1Database {
-  if (!env.DB) {
-    throw new Error("D1 binding DB is unavailable");
-  }
-  return env.DB;
-}
+export type SqlClient = ReturnType<typeof getSql>;
 
 export function isAuthorized(request: Request): boolean {
-  const configuredKey = env.API_KEY;
+  const configuredKey = process.env.API_KEY;
   const suppliedKey = request.headers.get("X-API-Key");
   return Boolean(configuredKey && suppliedKey === configuredKey);
 }
@@ -60,6 +58,10 @@ export function internalErrorResponse(error: unknown) {
   return errorResponse("internal server error", 500);
 }
 
+function toIsoString(value: string | Date): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 export function toBooking(row: BookingRow): Booking {
   return {
     id: row.id,
@@ -67,8 +69,12 @@ export function toBooking(row: BookingRow): Booking {
     name: row.name,
     email: row.email,
     status: row.status,
-    created_at: row.created_at,
+    created_at: toIsoString(row.created_at),
   };
+}
+
+export function toIsoDate(value: string | Date): string {
+  return toIsoString(value);
 }
 
 function canonicalJson(value: unknown): string {
@@ -93,16 +99,16 @@ export async function requestHash(payload: unknown): Promise<string> {
 }
 
 export async function replayIdempotentResponse(
-  db: D1Database,
+  sql: SqlClient,
   key: string,
   hash: string,
 ): Promise<Response | null> {
-  const stored = await db
-    .prepare(
-      "SELECT request_hash, response_status, response_body FROM idempotency_keys WHERE key = ?",
-    )
-    .bind(key)
-    .first<StoredIdempotency>();
+  const rows = await sql`
+    SELECT request_hash, response_status, response_body
+    FROM idempotency_keys
+    WHERE key = ${key}
+  `;
+  const stored = (rows as unknown as StoredIdempotency[])[0];
 
   if (!stored) return null;
   if (stored.request_hash !== hash) {
@@ -120,7 +126,7 @@ export async function replayIdempotentResponse(
 }
 
 export async function respondAndRemember(
-  db: D1Database,
+  sql: SqlClient,
   key: string | null,
   hash: string,
   body: unknown,
@@ -130,40 +136,45 @@ export async function respondAndRemember(
 
   const responseBody = JSON.stringify(body);
   try {
-    await db
-      .prepare(
-        "INSERT INTO idempotency_keys (key, request_hash, response_status, response_body, created_at) VALUES (?, ?, ?, ?, ?)",
-      )
-      .bind(key, hash, status, responseBody, new Date().toISOString())
-      .run();
+    await sql`
+      INSERT INTO idempotency_keys
+        (key, request_hash, response_status, response_body, created_at)
+      VALUES
+        (${key}, ${hash}, ${status}, ${responseBody}, ${new Date().toISOString()})
+    `;
     return jsonResponse(body, status);
   } catch (error) {
-    const replay = await replayIdempotentResponse(db, key, hash);
+    const replay = await replayIdempotentResponse(sql, key, hash);
     if (replay) return replay;
     throw error;
   }
 }
 
 export async function consumeRateLimit(
-  db: D1Database,
+  sql: SqlClient,
   email: string,
 ): Promise<{ allowed: boolean; retryAfter: number }> {
   const now = Date.now();
   const expiredBefore = now - 60_000;
-  const row = await db
-    .prepare(
-      `INSERT INTO rate_limits (email, window_start, attempts)
-       VALUES (?, ?, 1)
-       ON CONFLICT(email) DO UPDATE SET
-         attempts = CASE WHEN rate_limits.window_start <= ? THEN 1 ELSE rate_limits.attempts + 1 END,
-         window_start = CASE WHEN rate_limits.window_start <= ? THEN excluded.window_start ELSE rate_limits.window_start END
-       RETURNING window_start, attempts`,
-    )
-    .bind(email, now, expiredBefore, expiredBefore)
-    .first<{ window_start: number; attempts: number }>();
+  const rows = await sql`
+    INSERT INTO rate_limits (email, window_start, attempts)
+    VALUES (${email}, ${now}, 1)
+    ON CONFLICT(email) DO UPDATE SET
+      attempts = CASE
+        WHEN rate_limits.window_start <= ${expiredBefore} THEN 1
+        ELSE rate_limits.attempts + 1
+      END,
+      window_start = CASE
+        WHEN rate_limits.window_start <= ${expiredBefore} THEN EXCLUDED.window_start
+        ELSE rate_limits.window_start
+      END
+    RETURNING window_start, attempts
+  `;
+  const row = (rows as unknown as Array<{ window_start: string | number; attempts: number }>)[0];
 
   if (!row) throw new Error("Rate-limit update returned no row");
-  const retryAfter = Math.max(1, Math.ceil((row.window_start + 60_000 - now) / 1000));
+  const windowStart = Number(row.window_start);
+  const retryAfter = Math.max(1, Math.ceil((windowStart + 60_000 - now) / 1000));
   return { allowed: row.attempts <= 5, retryAfter };
 }
 

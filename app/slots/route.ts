@@ -1,8 +1,9 @@
+import { ensureSchema, getSql } from "../../db";
 import {
-  getDatabase,
   internalErrorResponse,
   isAuthorized,
   jsonResponse,
+  toIsoDate,
   unauthorizedResponse,
 } from "../../lib/booking-api";
 
@@ -11,9 +12,9 @@ export const dynamic = "force-dynamic";
 type SlotRow = {
   id: string;
   provider: string;
-  start: string;
-  end: string;
-  available: number;
+  start: string | Date;
+  end: string | Date;
+  available: boolean;
 };
 
 export async function GET(request: Request) {
@@ -21,29 +22,30 @@ export async function GET(request: Request) {
 
   try {
     const provider = new URL(request.url).searchParams.get("provider");
-    const db = getDatabase();
-    const statement = provider === null
-      ? db.prepare(
-          `SELECT s.id, s.provider, s.start, s.end,
-                  CASE WHEN b.id IS NULL THEN 1 ELSE 0 END AS available
-           FROM slots s
-           LEFT JOIN bookings b ON b.active_slot_id = s.id
-           ORDER BY s.start ASC, s.id ASC`,
-        )
-      : db
-          .prepare(
-            `SELECT s.id, s.provider, s.start, s.end,
-                    CASE WHEN b.id IS NULL THEN 1 ELSE 0 END AS available
-             FROM slots s
-             LEFT JOIN bookings b ON b.active_slot_id = s.id
-             WHERE s.provider = ?
-             ORDER BY s.start ASC, s.id ASC`,
-          )
-          .bind(provider);
+    await ensureSchema();
+    const sql = getSql();
+    const rows = provider === null
+      ? await sql`
+          SELECT s.id, s.provider, s.start, s."end", b.id IS NULL AS available
+          FROM slots s
+          LEFT JOIN bookings b ON b.active_slot_id = s.id
+          ORDER BY s.start ASC, s.id ASC
+        `
+      : await sql`
+          SELECT s.id, s.provider, s.start, s."end", b.id IS NULL AS available
+          FROM slots s
+          LEFT JOIN bookings b ON b.active_slot_id = s.id
+          WHERE s.provider = ${provider}
+          ORDER BY s.start ASC, s.id ASC
+        `;
 
-    const result = await statement.all<SlotRow>();
     return jsonResponse({
-      slots: result.results.map((slot) => ({ ...slot, available: Boolean(slot.available) })),
+      slots: (rows as unknown as SlotRow[]).map((slot) => ({
+        ...slot,
+        start: toIsoDate(slot.start),
+        end: toIsoDate(slot.end),
+        available: Boolean(slot.available),
+      })),
     });
   } catch (error) {
     return internalErrorResponse(error);

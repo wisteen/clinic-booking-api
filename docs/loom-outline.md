@@ -1,26 +1,24 @@
-# Five-minute walkthrough outline
+# Loom walkthrough outline
 
-## 0:00–1:20 — The patient experience
+Keep the recording below five minutes.
 
-1. Open the deployed page and enter the API key.
-2. Filter the available slots by clinician.
-3. Select a time, enter a name and email, and confirm the appointment.
-4. Point out the confirmation reference and cancel the booking to show that the slot becomes available again.
+## 1. Show the deployed page (about 90 seconds)
 
-## 1:20–2:00 — API contract
+Open the Vercel URL, enter the API key, filter the available slots, and create a booking. Point out the confirmation ID and then cancel the appointment so the slot becomes available again.
 
-Show the route folders under `app/`: `/reset`, `/slots`, `/bookings`, and `/bookings/[id]`. Mention that every response is JSON and every endpoint checks `X-API-Key`.
+## 2. Show the API contract (about 60 seconds)
 
-## 2:00–3:15 — Data integrity
+Open `app/reset/route.ts`, `app/slots/route.ts`, and `app/bookings/[id]/route.ts`. Briefly identify API-key authentication, validation, lookup, and cancellation.
 
-Open `db/schema.ts`. Explain that `active_slot_id` has a database unique index and becomes `NULL` on cancellation. That constraint, rather than an in-memory check, makes simultaneous double-booking impossible.
+## 3. Explain the reliability features (about 90 seconds)
 
-Open `app/bookings/route.ts`. Show that a booking and its idempotency response are written in one D1 batch, so a retried request gets the same ID and cannot create a duplicate.
+Open `app/bookings/route.ts` and `db/index.ts`.
 
-## 3:15–4:15 — Levels 4 and 5
+- The `active_slot_id` unique constraint prevents simultaneous double booking.
+- The booking and idempotency response are written in one serializable Postgres transaction.
+- Cursor pagination orders by `created_at` and `id`.
+- Rate-limit updates use one atomic Postgres upsert.
 
-Show cursor encoding and pagination in `lib/booking-api.ts`, then the atomic rate-limit upsert. Mention that the limit is isolated by normalized email and failed attempts count.
+## 4. Close with deployment and tests (about 30 seconds)
 
-## 4:15–5:00 — Verification and deployment
-
-Run `npm run test:api` against the deployed URL. Point out the concurrent 12-request test, idempotency test, cancellation test, pagination test, and rate-limit test. End on the public GitHub repository and deployed page.
+Show the Vercel deployment, the connected Neon database environment variable (hide its value), and the passing `npm run test:api` output. End on the GitHub repository page and mention that the production API key is stored as a Vercel secret.

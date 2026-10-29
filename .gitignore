@@ -12,7 +12,6 @@
 # Generated builds and framework state
 /dist/
 /.next/
-/.vinext/
 /out/
 next-env.d.ts
 *.tsbuildinfo
@@ -31,7 +30,7 @@ yarn-error.log*
 .dev.vars*
 *.pem
 
-# Checkout-local tool state
+# Local tool caches
 /.wrangler/
 /.sites-runtime/
 

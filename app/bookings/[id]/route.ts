@@ -1,7 +1,7 @@
+import { ensureSchema, getSql } from "../../../db";
 import {
-  type Booking,
+  type BookingRow,
   errorResponse,
-  getDatabase,
   internalErrorResponse,
   isAuthorized,
   jsonResponse,
@@ -18,11 +18,14 @@ export async function GET(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const db = getDatabase();
-    const booking = await db
-      .prepare("SELECT id, slot_id, name, email, status, created_at FROM bookings WHERE id = ?")
-      .bind(id)
-      .first<Booking>();
+    await ensureSchema();
+    const sql = getSql();
+    const rows = await sql`
+      SELECT id, slot_id, name, email, status, created_at
+      FROM bookings
+      WHERE id = ${id}
+    `;
+    const booking = (rows as unknown as BookingRow[])[0];
     if (!booking) return errorResponse("booking not found", 404);
     return jsonResponse(toBooking(booking));
   } catch (error) {
@@ -35,21 +38,22 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   try {
     const { id } = await context.params;
-    const db = getDatabase();
-    const cancelled = await db
-      .prepare(
-        `UPDATE bookings
-         SET status = 'cancelled', active_slot_id = NULL
-         WHERE id = ? AND status = 'confirmed'
-         RETURNING id, slot_id, name, email, status, created_at`,
-      )
-      .bind(id)
-      .first<Booking>();
+    await ensureSchema();
+    const sql = getSql();
+    const rows = await sql`
+      UPDATE bookings
+      SET status = 'cancelled', active_slot_id = NULL
+      WHERE id = ${id} AND status = 'confirmed'
+      RETURNING id, slot_id, name, email, status, created_at
+    `;
+    const cancelled = (rows as unknown as BookingRow[])[0];
 
     if (cancelled) return jsonResponse(toBooking(cancelled));
 
-    const existing = await db.prepare("SELECT status FROM bookings WHERE id = ?").bind(id).first<{ status: string }>();
-    if (!existing) return errorResponse("booking not found", 404);
+    const existingRows = await sql`SELECT status FROM bookings WHERE id = ${id}`;
+    if (!(existingRows as unknown as Array<{ status: string }>)[0]) {
+      return errorResponse("booking not found", 404);
+    }
     return errorResponse("booking is already cancelled", 409);
   } catch (error) {
     return internalErrorResponse(error);
