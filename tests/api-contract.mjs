@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 
-const baseUrl = (process.env.BASE_URL ?? "http://127.0.0.1:8787").replace(/\/$/, "");
+const baseUrl = (process.env.BASE_URL ?? "http://127.0.0.1:3000").replace(/\/$/, "");
 const apiKey = process.env.API_KEY ?? "local-dev-key";
 
 function futureIso(hoursFromNow) {
