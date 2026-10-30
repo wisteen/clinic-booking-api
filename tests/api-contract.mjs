@@ -60,6 +60,15 @@ const filtered = await request("/slots?provider=Dr%20Ade");
 assert.ok(filtered.body.slots.every((slot) => slot.provider === "Dr Ade"));
 step("slot reset, sorting, filtering, and availability");
 
+const addedSlot = makeSlot("s7", "Dr Chidi", 30);
+const added = await request("/slots", { method: "POST", body: addedSlot });
+assert.equal(added.response.status, 201);
+assert.deepEqual(added.body, { ...addedSlot, available: true });
+const duplicateSlot = await request("/slots", { method: "POST", body: addedSlot });
+assert.equal(duplicateSlot.response.status, 409);
+assert.deepEqual(duplicateSlot.body, { error: "slot id already exists" });
+step("non-destructive slot creation and duplicate protection");
+
 const invalid = await request("/bookings", {
   method: "POST",
   body: { slot_id: "s1", name: "Ada", email: "not-an-email" },

@@ -5,6 +5,7 @@ A persistent appointment-booking API and responsive patient web page built for t
 ## Live deployment
 
 - Patient booking page and API base: [clinic-booking-api-ten.vercel.app](https://clinic-booking-api-ten.vercel.app)
+- Slot-management page: [clinic-booking-api-ten.vercel.app/manage](https://clinic-booking-api-ten.vercel.app/manage)
 - ReDoc API reference: [clinic-booking-api-ten.vercel.app/docs](https://clinic-booking-api-ten.vercel.app/docs)
 - OpenAPI description: [clinic-booking-api-ten.vercel.app/openapi.json](https://clinic-booking-api-ten.vercel.app/openapi.json)
 
@@ -16,7 +17,7 @@ A persistent appointment-booking API and responsive patient web page built for t
 - **Level 4:** atomic idempotency-key handling and case-insensitive cursor pagination.
 - **Level 5:** atomic per-email rate limiting at five attempts per 60 seconds, including failed attempts.
 
-The web page lets a patient enter the API key, browse and filter slots, book a time, see the confirmation, and cancel the appointment.
+The patient page lets someone browse slots, book a time, list all bookings for their email, see confirmations, and cancel appointments. A separate management page adds new availability without resetting the database or disturbing existing bookings.
 
 ## API contract
 
@@ -30,6 +31,7 @@ X-API-Key: your-key
 | --- | --- | --- |
 | `POST` | `/reset` | Delete bookings and replace all slots |
 | `GET` | `/slots?provider=Dr%20Ade` | List slots in start-time order |
+| `POST` | `/slots` | Add one future appointment slot |
 | `POST` | `/bookings` | Create a booking; optionally accepts `Idempotency-Key` |
 | `GET` | `/bookings/{id}` | Look up one booking |
 | `DELETE` | `/bookings/{id}` | Cancel a confirmed booking |

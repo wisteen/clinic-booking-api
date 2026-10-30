@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  CalendarPlus2,
   CalendarDays,
   Check,
   CheckCircle2,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { BookingHistory } from "../components/booking-history";
 
 type Slot = {
   id: string;
@@ -210,8 +212,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <a href="/manage" className="inline-flex items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-semibold text-[#33695a] shadow-sm transition hover:border-[#a9c8bb] hover:bg-[#edf6f1]">
+              <CalendarPlus2 size={14} /> <span className="hidden sm:inline">Manage slots</span>
+            </a>
             <a href="/docs" className="inline-flex items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-semibold text-[#33695a] shadow-sm transition hover:border-[#a9c8bb] hover:bg-[#edf6f1]">
-              <FileText size={14} /> API docs
+              <FileText size={14} /> <span className="hidden sm:inline">API docs</span>
             </a>
             <div className="hidden items-center gap-2 rounded-full border border-[#d8e4dd] bg-white px-3 py-2 text-xs font-medium text-[#42665b] shadow-sm sm:flex">
               <span className="h-2 w-2 rounded-full bg-[#27a47d] shadow-[0_0_0_4px_rgba(39,164,125,.12)]" />
@@ -260,7 +265,8 @@ export default function Home() {
           </form>
         ) : (
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_400px]">
-            <section className="rounded-[28px] border border-[#d9e4dd] bg-white/85 p-5 shadow-[0_22px_60px_rgba(31,67,56,.08)] backdrop-blur sm:p-7">
+            <div className="space-y-6">
+              <section className="rounded-[28px] border border-[#d9e4dd] bg-white/85 p-5 shadow-[0_22px_60px_rgba(31,67,56,.08)] backdrop-blur sm:p-7">
               <div className="flex flex-wrap items-center justify-between gap-4">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f897f]">Step 1</p>
@@ -298,7 +304,19 @@ export default function Home() {
                   );
                 })}
               </div>
-            </section>
+              </section>
+
+              <BookingHistory
+                key={booking?.id ?? "booking-history"}
+                apiKey={apiKey}
+                slots={slots}
+                defaultEmail={booking?.email ?? ""}
+                onCancelled={async (cancelled) => {
+                  setBooking((current) => current?.id === cancelled.id ? cancelled : current);
+                  await loadSlots(apiKey);
+                }}
+              />
+            </div>
 
             <aside className="h-fit rounded-[28px] bg-[#153f35] p-6 text-white shadow-[0_24px_70px_rgba(21,63,53,.22)] sm:p-7 lg:sticky lg:top-6">
               {booking ? (
